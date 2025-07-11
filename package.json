@@ -1,0 +1,73 @@
+{
+  "name": "load-monitor-alert",
+  "displayName": "Monitor de Load Average",
+  "description": "VS Code alert for high load average",
+  "version": "0.0.9",
+  "publisher": "MonitordeLoadAverage",
+  "engines": {
+    "vscode": "^1.102.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": ["onStartupFinished"],
+  "icon": "images/icon.png",
+  "main": "./dist/extension.js",
+  "contributes": {
+  "configuration": {
+    "title": "Load Monitor",
+    "properties": {
+      "loadMonitor.intervalSeconds": {
+        "type": "number",
+        "default": 30,
+        "minimum": 5,
+        "description": "Intervalo (em segundos) entre verificações do log de carga."
+      },
+      "loadMonitor.threshold": {
+        "type": "number",
+        "default": 4.0,
+        "minimum": 0,
+        "description": "Valor de load average a partir do qual será exibido um alerta."
+      },
+      "loadMonitor.logFilePath": {
+        "type": "string",
+        "default": "~/load_alerts.log",
+        "description": "Caminho absoluto do arquivo de log a ser monitorado."
+      }
+    }
+  },
+  "commands": [
+    {
+      "command": "load-monitor-alert.runSetup",
+      "title": "Load Monitor: Executar Script de Monitoramento"
+    }
+  ]
+},
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.102.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "eslint": "^9.25.1",
+    "esbuild": "^0.25.3",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.8.3",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
