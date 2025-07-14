@@ -1,10 +1,10 @@
+// Criar um WebView e registrar um provider na sidebar
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { spawn } from "child_process";
 
-// Variáveis globais para controle de loop e alertas
 let interval: NodeJS.Timeout | null = null;
 let lastAlertTimestamp = "";
 let statusBarItem: vscode.StatusBarItem | undefined;
@@ -16,9 +16,7 @@ let userSettings = {
   showSidebar: true,
 };
 
-// Função principal chamada quando a extensão é ativada
 export function activate(context: vscode.ExtensionContext) {
-  console.log("[LOAD MONITOR] Ativando extensão...");
   carregarConfiguracoes();
 
   vscode.window.showInformationMessage("Load Monitor: iniciado.");
@@ -52,9 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   const checkLog = () => {
-    console.log("[LOAD MONITOR] Verificando log...");
     if (!fs.existsSync(userSettings.logFilePath)) {
-      console.log("[LOAD MONITOR] Arquivo de log não encontrado. Abortando.");
       if (statusBarItem) statusBarItem.text = `Load: arquivo não encontrado`;
       return;
     }
@@ -63,28 +59,7 @@ export function activate(context: vscode.ExtensionContext) {
     const lines = content.trim().split("\n").reverse();
 
     const lastAlertLine = lines.find((line) => line.includes("[ALERTA]"));
-    const lastDebugLine = lines.find((line) => line.includes("[DEBUG]"));
-
-    let latestLine = "";
-    let latestTimestamp = "";
-
-    const extractTimestamp = (line: string) => {
-      const match = line.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
-      return match ? match[0] : "";
-    };
-
-    if (lastAlertLine && lastDebugLine) {
-      const alertTimestamp = extractTimestamp(lastAlertLine);
-      const debugTimestamp = extractTimestamp(lastDebugLine);
-      latestLine =
-        new Date(alertTimestamp) > new Date(debugTimestamp)
-          ? lastAlertLine
-          : lastDebugLine;
-    } else {
-      latestLine = lastAlertLine || lastDebugLine || "";
-    }
-
-    if (!latestLine) {
+    if (!lastAlertLine) {
       if (statusBarItem) {
         statusBarItem.text = `Load: --`;
         statusBarItem.backgroundColor = undefined;
@@ -92,9 +67,11 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const loadMatch =
-      latestLine.match(/LOAD=(\d+(\.\d+)?)/) ||
-      latestLine.match(/Load average alto: (\d+(\.\d+)?)/);
+    const timestampMatch = lastAlertLine.match(
+      /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/
+    );
+    const timestamp = timestampMatch ? timestampMatch[0] : "";
+    const loadMatch = lastAlertLine.match(/Load average alto: (\d+(\.\d+)?)/);
     const load = loadMatch ? parseFloat(loadMatch[1]) : 0;
 
     if (statusBarItem) {
@@ -105,13 +82,8 @@ export function activate(context: vscode.ExtensionContext) {
           : undefined;
     }
 
-    // Mostrar alerta se for um novo ALERTA
-    if (
-      latestLine.includes("[ALERTA]") &&
-      extractTimestamp(latestLine) !== lastAlertTimestamp &&
-      load > userSettings.threshold
-    ) {
-      lastAlertTimestamp = extractTimestamp(latestLine);
+    if (timestamp !== lastAlertTimestamp && load > userSettings.threshold) {
+      lastAlertTimestamp = timestamp;
       vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
     }
   };
@@ -222,7 +194,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-// Função que cria o script bash e pergunta se o usuário quer executá-lo
 function gerarESugerirExecucaoDoScript(
   logFilePath: string,
   threshold: number,
@@ -256,7 +227,6 @@ while true; do
     LOAD=$(echo "$RAW_LOAD" | sed 's/,/./')
 
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[DEBUG] $TIMESTAMP - LOAD=$LOAD THRESHOLD=$THRESHOLD" >> "$LOGFILE"
 
     if (( $(echo "$LOAD > $THRESHOLD" | bc -l) )); then
         echo "[ALERTA] $TIMESTAMP - Load average alto: $LOAD" >> "$LOGFILE"
@@ -295,48 +265,8 @@ done
   }
 }
 
-// Função executada automaticamente quando a extensão é desativada
 export function deactivate() {
   if (interval) clearInterval(interval);
-  const scriptDir = path.join(os.homedir(), "load-monitor");
-  const logFilePath = path.join(os.homedir(), "load_alerts.log");
-  const scriptPath = path.join(scriptDir, "monitor_load.sh");
-  const pidFile = path.join(scriptDir, "monitor_load.pid");
-
-  // Remove o log
-  // if (fs.existsSync(logFilePath)) {
-  //   try {
-  //     fs.unlinkSync(logFilePath);
-  //     console.log("[LOAD MONITOR] Arquivo de log removido.");
-  //   } catch (e) {
-  //     console.error("[LOAD MONITOR] Falha ao remover o log:", e);
-  //   }
-  // }
-
-  // // Encerra o processo em background
-  // if (fs.existsSync(pidFile)) {
-  //   const pid = fs.readFileSync(pidFile, "utf-8").trim();
-  //   try {
-  //     process.kill(Number(pid), "SIGTERM");
-  //     console.log(`[LOAD MONITOR] Processo encerrado (PID: ${pid}).`);
-  //     fs.unlinkSync(pidFile);
-  //   } catch (e) {
-  //     console.error(
-  //       `[LOAD MONITOR] Falha ao encerrar processo (PID: ${pid}):`,
-  //       e
-  //     );
-  //   }
-  // }
-
-  // // Remove o script bash
-  // if (fs.existsSync(scriptPath)) {
-  //   try {
-  //     fs.unlinkSync(scriptPath);
-  //     console.log("[LOAD MONITOR] Script de monitoramento removido.");
-  //   } catch (e) {
-  //     console.error("[LOAD MONITOR] Falha ao remover script:", e);
-  //   }
-  // }
 }
 
 function carregarConfiguracoes() {
@@ -359,7 +289,6 @@ function pararScriptEReiniciar() {
     try {
       process.kill(Number(pid), "SIGTERM");
       fs.unlinkSync(pidFile);
-      console.log(`[LOAD MONITOR] Processo antigo encerrado (PID: ${pid}).`);
     } catch (e) {
       console.error(`[LOAD MONITOR] Erro ao encerrar processo antigo:`, e);
     }
@@ -369,6 +298,38 @@ function pararScriptEReiniciar() {
     userSettings.logFilePath,
     userSettings.threshold,
     userSettings.intervalSeconds,
-    true // <- Executar sem perguntar
+    true
   );
 }
+
+// Remove o log
+// if (fs.existsSync(logFilePath)) {
+//   try {
+//     fs.unlinkSync(logFilePath);
+//   } catch (e) {
+//     console.error("[LOAD MONITOR] Falha ao remover o log:", e);
+//   }
+// }
+
+// // Encerra o processo em background
+// if (fs.existsSync(pidFile)) {
+//   const pid = fs.readFileSync(pidFile, "utf-8").trim();
+//   try {
+//     process.kill(Number(pid), "SIGTERM");
+//     fs.unlinkSync(pidFile);
+//   } catch (e) {
+//     console.error(
+//       `[LOAD MONITOR] Falha ao encerrar processo (PID: ${pid}):`,
+//       e
+//     );
+//   }
+// }
+
+// // Remove o script bash
+// if (fs.existsSync(scriptPath)) {
+//   try {
+//     fs.unlinkSync(scriptPath);
+//   } catch (e) {
+//     console.error("[LOAD MONITOR] Falha ao remover script:", e);
+//   }
+// }
