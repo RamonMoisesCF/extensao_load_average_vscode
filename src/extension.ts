@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.StatusBarAlignment.Right,
     100
   );
-  statusBarItem.text = `Load: --`;
+  statusBarItem.text = `$(dashboard) Load: --`;
   statusBarItem.tooltip = "Monitor de Load Average";
   if (userSettings.showSidebar) statusBarItem.show();
 
@@ -50,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
   const checkLog = () => {
     if (!fs.existsSync(userSettings.logFilePath)) {
       if (userSettings.showSidebar) {
-        statusBarItem.text = `Load: arquivo não encontrado`;
+        statusBarItem.text = `$(dashboard) Load: arquivo não encontrado`;
         statusBarItem.backgroundColor = undefined;
       }
       return;
@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
     const load = loadMatch ? parseFloat(loadMatch[1]) : 0;
 
     if (userSettings.showSidebar) {
-      statusBarItem.text = `Load: ${isNaN(load) ? "--" : load.toFixed(2)}`;
+      statusBarItem.text = `$(dashboard) Load: ${isNaN(load) ? "--" : load.toFixed(2)}`;
     }
 
     if (
