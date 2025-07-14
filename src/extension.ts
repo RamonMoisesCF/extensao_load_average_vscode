@@ -1,4 +1,3 @@
-// Criar um WebView e registrar um provider na sidebar
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
@@ -7,7 +6,7 @@ import { spawn } from "child_process";
 
 let interval: NodeJS.Timeout | null = null;
 let lastAlertTimestamp = "";
-let statusBarItem: vscode.StatusBarItem | undefined;
+let statusBarItem: vscode.StatusBarItem;
 
 let userSettings = {
   intervalSeconds: 30,
@@ -17,19 +16,18 @@ let userSettings = {
 };
 
 export function activate(context: vscode.ExtensionContext) {
+  console.log("[LOAD MONITOR] Ativando extensão...");
   carregarConfiguracoes();
 
   vscode.window.showInformationMessage("Load Monitor: iniciado.");
 
-  if (userSettings.showSidebar) {
-    statusBarItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Right,
-      100
-    );
-    statusBarItem.text = `Load: --`;
-    statusBarItem.tooltip = "Monitor de Load Average";
-    statusBarItem.show();
-  }
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
+  statusBarItem.text = `Load: --`;
+  statusBarItem.tooltip = "Monitor de Load Average";
+  if (userSettings.showSidebar) statusBarItem.show();
 
   if (!fs.existsSync(userSettings.logFilePath)) {
     vscode.window
@@ -51,40 +49,48 @@ export function activate(context: vscode.ExtensionContext) {
 
   const checkLog = () => {
     if (!fs.existsSync(userSettings.logFilePath)) {
-      if (statusBarItem) statusBarItem.text = `Load: arquivo não encontrado`;
-      return;
-    }
-
-    const content = fs.readFileSync(userSettings.logFilePath, "utf8");
-    const lines = content.trim().split("\n").reverse();
-
-    const lastAlertLine = lines.find((line) => line.includes("[ALERTA]"));
-    if (!lastAlertLine) {
-      if (statusBarItem) {
-        statusBarItem.text = `Load: --`;
+      if (userSettings.showSidebar) {
+        statusBarItem.text = `Load: arquivo não encontrado`;
         statusBarItem.backgroundColor = undefined;
       }
       return;
     }
 
-    const timestampMatch = lastAlertLine.match(
+    const content = fs.readFileSync(userSettings.logFilePath, "utf8");
+    const lines = content.trim().split("\n").reverse();
+    const lastAlertLine = lines.find((line) => line.includes("[ALERTA]"));
+    const lastLine = lastAlertLine || lines[0];
+
+    const timestampMatch = lastAlertLine?.match(
       /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/
     );
-    const timestamp = timestampMatch ? timestampMatch[0] : "";
-    const loadMatch = lastAlertLine.match(/Load average alto: (\d+(\.\d+)?)/);
+    const alertTimestamp = timestampMatch ? timestampMatch[0] : "";
+
+    const loadMatch =
+      lastLine.match(/LOAD=(\d+(\.\d+)?)/) ||
+      lastLine.match(/Load average alto: (\d+(\.\d+)?)/);
     const load = loadMatch ? parseFloat(loadMatch[1]) : 0;
 
-    if (statusBarItem) {
-      statusBarItem.text = `Load: ${load.toFixed(2)}`;
-      statusBarItem.backgroundColor =
-        load > userSettings.threshold
-          ? new vscode.ThemeColor("statusBarItem.errorBackground")
-          : undefined;
+    if (userSettings.showSidebar) {
+      statusBarItem.text = `Load: ${isNaN(load) ? "--" : load.toFixed(2)}`;
     }
 
-    if (timestamp !== lastAlertTimestamp && load > userSettings.threshold) {
-      lastAlertTimestamp = timestamp;
+    if (
+      lastAlertLine &&
+      alertTimestamp !== lastAlertTimestamp &&
+      load > userSettings.threshold
+    ) {
+      lastAlertTimestamp = alertTimestamp;
+      if (userSettings.showSidebar) {
+        statusBarItem.backgroundColor = new vscode.ThemeColor(
+          "statusBarItem.errorBackground"
+        );
+      }
       vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
+    } else {
+      if (userSettings.showSidebar) {
+        statusBarItem.backgroundColor = undefined;
+      }
     }
   };
 
@@ -105,8 +111,8 @@ export function activate(context: vscode.ExtensionContext) {
       const mudouThreshold = userSettings.threshold !== oldSettings.threshold;
       const mudouInterval =
         userSettings.intervalSeconds !== oldSettings.intervalSeconds;
-
       const mudouSidebar = userSettings.showSidebar !== oldSettings.showSidebar;
+
       if (mudouSidebar) {
         if (userSettings.showSidebar && !statusBarItem) {
           statusBarItem = vscode.window.createStatusBarItem(
@@ -116,14 +122,11 @@ export function activate(context: vscode.ExtensionContext) {
           statusBarItem.tooltip = "Monitor de Load Average";
           statusBarItem.show();
         } else if (!userSettings.showSidebar && statusBarItem) {
-          statusBarItem.dispose();
-          statusBarItem = undefined;
+          statusBarItem.hide();
         }
       }
 
-      const precisaReiniciarScript =
-        mudouThreshold || mudouInterval || mudouLogFilePath;
-      if (precisaReiniciarScript) {
+      if (mudouThreshold || mudouInterval || mudouLogFilePath) {
         pararScriptEReiniciar();
       }
 
@@ -134,10 +137,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({
     dispose: () => interval && clearInterval(interval),
   });
-
-  context.subscriptions.push({
-    dispose: () => statusBarItem?.dispose(),
-  });
+  context.subscriptions.push({ dispose: () => statusBarItem?.dispose() });
 
   context.subscriptions.push(
     vscode.commands.registerCommand("load-monitor-alert.runSetup", () => {
@@ -194,6 +194,21 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
+export function deactivate() {
+  if (interval) clearInterval(interval);
+}
+
+function carregarConfiguracoes() {
+  const config = vscode.workspace.getConfiguration("loadMonitor");
+  userSettings.intervalSeconds = config.get<number>("intervalSeconds", 30);
+  userSettings.threshold = config.get<number>("threshold", 4.0);
+  userSettings.logFilePath = config.get<string>(
+    "logFilePath",
+    path.join(os.homedir(), "load_alerts.log")
+  );
+  userSettings.showSidebar = config.get<boolean>("showSidebar", true);
+}
+
 function gerarESugerirExecucaoDoScript(
   logFilePath: string,
   threshold: number,
@@ -227,6 +242,7 @@ while true; do
     LOAD=$(echo "$RAW_LOAD" | sed 's/,/./')
 
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[DEBUG] $TIMESTAMP - LOAD=$LOAD THRESHOLD=$THRESHOLD" >> "$LOGFILE"
 
     if (( $(echo "$LOAD > $THRESHOLD" | bc -l) )); then
         echo "[ALERTA] $TIMESTAMP - Load average alto: $LOAD" >> "$LOGFILE"
@@ -265,21 +281,6 @@ done
   }
 }
 
-export function deactivate() {
-  if (interval) clearInterval(interval);
-}
-
-function carregarConfiguracoes() {
-  const config = vscode.workspace.getConfiguration("loadMonitor");
-  userSettings.intervalSeconds = config.get<number>("intervalSeconds", 30);
-  userSettings.threshold = config.get<number>("threshold", 4.0);
-  userSettings.logFilePath = config.get<string>(
-    "logFilePath",
-    path.join(os.homedir(), "load_alerts.log")
-  );
-  userSettings.showSidebar = config.get<boolean>("showSidebar", true);
-}
-
 function pararScriptEReiniciar() {
   const scriptDir = path.join(os.homedir(), "load-monitor");
   const pidFile = path.join(scriptDir, "monitor_load.pid");
@@ -289,6 +290,7 @@ function pararScriptEReiniciar() {
     try {
       process.kill(Number(pid), "SIGTERM");
       fs.unlinkSync(pidFile);
+      console.log(`[LOAD MONITOR] Processo antigo encerrado (PID: ${pid}).`);
     } catch (e) {
       console.error(`[LOAD MONITOR] Erro ao encerrar processo antigo:`, e);
     }
