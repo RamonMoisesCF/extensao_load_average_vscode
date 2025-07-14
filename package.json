@@ -2,16 +2,16 @@
   "name": "load-monitor-alert",
   "displayName": "Monitor de Load Average",
   "description": "VS Code alert for high load average",
-  "version": "0.0.17",
+  "version": "0.0.28",
   "publisher": "MonitordeLoadAverage",
   "author": {
     "name": "Ramon Moisés",
-    "url": "https:///github.com/RamonMoisesCF"
+    "url": "https://github.com/RamonMoisesCF"
   },
   "repository": {
-  "type": "git",
-  "url": "https://github.com/RamonMoisesCF/extensao_load_average_vscode.git"
-},
+    "type": "git",
+    "url": "https://github.com/RamonMoisesCF/extensao_load_average_vscode.git"
+  },
   "engines": {
     "vscode": "^1.102.0"
   },
@@ -22,55 +22,63 @@
   "icon": "images/icon.png",
   "main": "./dist/extension.js",
   "contributes": {
-  "configuration": {
-    "title": "Load Monitor",
-    "properties": {
-      "loadMonitor.intervalSeconds": {
-        "type": "number",
-        "default": 30,
-        "minimum": 5,
-        "description": "Intervalo (em segundos) entre verificações do log de carga."
-      },
-      "loadMonitor.showSidebar": {
-        "type": "boolean",
-        "default": true,
-        "description": "Exibir o painel de monitoramento do load na sidebar."
-      },
-      "loadMonitor.threshold": {
-        "type": "number",
-        "default": 4.0,
-        "minimum": 0,
-        "description": "Valor de load average a partir do qual será exibido um alerta."
-      },
-      "loadMonitor.logFilePath": {
-        "type": "string",
-        "default": "~/load_alerts.log",
-        "description": "Caminho absoluto do arquivo de log a ser monitorado."
+    "configuration": {
+      "title": "Load Monitor",
+      "properties": {
+        "loadMonitor.intervalSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "description": "Intervalo (em segundos) entre verificações do log de carga."
+        },
+        "loadMonitor.showSidebar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Exibir o painel de monitoramento do load na barra inferior."
+        },
+        "loadMonitor.threshold": {
+          "type": "number",
+          "default": 4.0,
+          "minimum": 0,
+          "description": "Valor de load average a partir do qual será exibido um alerta."
+        },
+        "loadMonitor.logFilePath": {
+          "type": "string",
+          "default": "~/load_alerts.log",
+          "description": "Caminho absoluto do arquivo de log a ser monitorado."
+        }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "load-monitor-alert.runSetup",
+        "title": "Load Monitor: Executar Script de Monitoramento"
+      },
+      {
+        "command": "load-monitor-alert.forceCheck",
+        "title": "Load Monitor: Forçar Verificação Manual"
+      },
+      {
+        "command": "load-monitor-alert.cleanup",
+        "title": "Load Monitor: Parar e Excluir Arquivos"
+      },
+      {
+        "command": "load-monitor-alert.showLog",
+        "title": "Load Monitor: Exibir Log no Editor"
+      },
+      {
+        "command": "load-monitor-alert.reloadSettings",
+        "title": "Load Monitor: Recarregar Configurações"
+      }
+    ]
   },
-  "commands": [
-    {
-      "command": "load-monitor-alert.runSetup",
-      "title": "Load Monitor: Executar Script de Monitoramento"
-    },
-    {
-       "command": "load-monitor-alert.forceCheck",
-       "title": "Load Monitor: Forçar Verificação Manual"
-    },
-    {
-       "command": "load-monitor-alert.cleanup",
-       "title": "Load Monitor: Parar e Excluir Arquivos"
-     }
-  ],
-"views": {
+  "views": {
   "loadMonitor": [
     {
       "id": "loadMonitorSidebar.view",
       "name": "Load Monitor"
     }
   ]
-}
 },
   "scripts": {
     "vscode:prepublish": "npm run package",
