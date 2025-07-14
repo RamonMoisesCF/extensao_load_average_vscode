@@ -2,8 +2,12 @@
   "name": "load-monitor-alert",
   "displayName": "Monitor de Load Average",
   "description": "VS Code alert for high load average",
-  "version": "0.0.10",
+  "version": "0.0.17",
   "publisher": "MonitordeLoadAverage",
+  "author": {
+    "name": "Ramon Moisés",
+    "url": "https:///github.com/RamonMoisesCF"
+  },
   "repository": {
   "type": "git",
   "url": "https://github.com/RamonMoisesCF/extensao_load_average_vscode.git"
@@ -27,6 +31,11 @@
         "minimum": 5,
         "description": "Intervalo (em segundos) entre verificações do log de carga."
       },
+      "loadMonitor.showSidebar": {
+        "type": "boolean",
+        "default": true,
+        "description": "Exibir o painel de monitoramento do load na sidebar."
+      },
       "loadMonitor.threshold": {
         "type": "number",
         "default": 4.0,
@@ -44,8 +53,24 @@
     {
       "command": "load-monitor-alert.runSetup",
       "title": "Load Monitor: Executar Script de Monitoramento"
+    },
+    {
+       "command": "load-monitor-alert.forceCheck",
+       "title": "Load Monitor: Forçar Verificação Manual"
+    },
+    {
+       "command": "load-monitor-alert.cleanup",
+       "title": "Load Monitor: Parar e Excluir Arquivos"
+     }
+  ],
+"views": {
+  "loadMonitor": [
+    {
+      "id": "loadMonitorSidebar.view",
+      "name": "Load Monitor"
     }
   ]
+}
 },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -59,7 +84,8 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "postinstall": "node ./node_modules/vscode/bin/install"
   },
   "devDependencies": {
     "@types/vscode": "^1.102.0",
@@ -73,5 +99,6 @@
     "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2"
-  }
+  },
+  "license": "MIT"
 }

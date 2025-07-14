@@ -2,137 +2,249 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { spawn } from "child_process";
 
-let scriptProcess: vscode.Terminal | null = null;
+// Variáveis globais para controle de loop e alertas
 let interval: NodeJS.Timeout | null = null;
 let lastAlertTimestamp = "";
+let statusBarItem: vscode.StatusBarItem | undefined;
 
-let intervalSeconds = 30;
-let threshold = 4.0;
+let userSettings = {
+  intervalSeconds: 30,
+  threshold: 4.0,
+  logFilePath: path.join(os.homedir(), "load_alerts.log"),
+  showSidebar: true,
+};
 
+// Função principal chamada quando a extensão é ativada
 export function activate(context: vscode.ExtensionContext) {
   console.log("[LOAD MONITOR] Ativando extensão...");
-
-  const config = vscode.workspace.getConfiguration("loadMonitor");
-
-  // Função para atualizar configurações
-  function updateConfig() {
-    intervalSeconds = config.get<number>("intervalSeconds", 30);
-    threshold = config.get<number>("threshold", 4.0);
-    console.log(`[LOAD MONITOR] Config atualizada: intervalSeconds=${intervalSeconds}, threshold=${threshold}`);
-  }
-
-  updateConfig();
-
-  const logFilePath = config.get<string>("logFilePath", path.join(os.homedir(), "load_alerts.log"));
-  console.log(`[LOAD MONITOR] Usando logFilePath: ${logFilePath}`);
+  carregarConfiguracoes();
 
   vscode.window.showInformationMessage("Load Monitor: iniciado.");
 
-  if (!fs.existsSync(logFilePath)) {
+  if (userSettings.showSidebar) {
+    statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Right,
+      100
+    );
+    statusBarItem.text = `Load: --`;
+    statusBarItem.tooltip = "Monitor de Load Average";
+    statusBarItem.show();
+  }
+
+  if (!fs.existsSync(userSettings.logFilePath)) {
     vscode.window
       .showWarningMessage(
-        `Arquivo de log não encontrado em: ${logFilePath}. Deseja gerar o script automaticamente para começar a monitorar o sistema?`,
+        `Arquivo de log não encontrado em: ${userSettings.logFilePath}. Deseja gerar o script automaticamente para começar a monitorar o sistema?`,
         "Gerar script",
         "Cancelar"
       )
       .then((res) => {
         if (res === "Gerar script") {
-          gerarESugerirExecucaoDoScript(logFilePath, threshold, intervalSeconds);
+          gerarESugerirExecucaoDoScript(
+            userSettings.logFilePath,
+            userSettings.threshold,
+            userSettings.intervalSeconds
+          );
         }
       });
   }
 
-  function checkLog() {
-    try {
-      console.log("[LOAD MONITOR] Verificando log...");
-      if (!fs.existsSync(logFilePath)) {
-        console.log("[LOAD MONITOR] Arquivo de log não encontrado. Abortando verificação.");
-        return;
-      }
-
-      const content = fs.readFileSync(logFilePath, "utf8");
-      const lines = content.trim().split("\n");
-      const lastAlertLine = [...lines].reverse().find(line => line.includes("[ALERTA]"));
-      if (!lastAlertLine) {
-        console.log("[LOAD MONITOR] Nenhuma linha com ALERTA encontrada.");
-        return;
-      }
-
-      console.log(`[LOAD MONITOR] Última linha com ALERTA: ${lastAlertLine}`);
-
-      const timestampMatch = lastAlertLine.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
-      const timestamp = timestampMatch ? timestampMatch[0] : "";
-      console.log(`[LOAD MONITOR] Timestamp extraído: ${timestamp}`);
-      console.log(`[LOAD MONITOR] Último alerta salvo: ${lastAlertTimestamp}`);
-
-      const loadMatch = lastAlertLine.match(/Load average alto: (\d+(\.\d+)?)/);
-      const load = loadMatch ? parseFloat(loadMatch[1]) : 0;
-      console.log(`[LOAD MONITOR] Load extraído: ${load} | Threshold configurado: ${threshold}`);
-
-      if (timestamp && timestamp !== lastAlertTimestamp && load > threshold) {
-        lastAlertTimestamp = timestamp;
-        vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
-        console.log("[LOAD MONITOR] Alerta exibido para o usuário.");
-      } else {
-        console.log("[LOAD MONITOR] Nenhum novo alerta a ser exibido.");
-      }
-    } catch (error) {
-      console.error("[LOAD MONITOR] Erro ao verificar log:", error);
+  const checkLog = () => {
+    console.log("[LOAD MONITOR] Verificando log...");
+    if (!fs.existsSync(userSettings.logFilePath)) {
+      console.log("[LOAD MONITOR] Arquivo de log não encontrado. Abortando.");
+      if (statusBarItem) statusBarItem.text = `Load: arquivo não encontrado`;
+      return;
     }
-  }
 
-  function startChecking() {
+    const content = fs.readFileSync(userSettings.logFilePath, "utf8");
+    const lines = content.trim().split("\n").reverse();
+
+    const lastAlertLine = lines.find((line) => line.includes("[ALERTA]"));
+    const lastDebugLine = lines.find((line) => line.includes("[DEBUG]"));
+
+    let latestLine = "";
+    let latestTimestamp = "";
+
+    const extractTimestamp = (line: string) => {
+      const match = line.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+      return match ? match[0] : "";
+    };
+
+    if (lastAlertLine && lastDebugLine) {
+      const alertTimestamp = extractTimestamp(lastAlertLine);
+      const debugTimestamp = extractTimestamp(lastDebugLine);
+      latestLine =
+        new Date(alertTimestamp) > new Date(debugTimestamp)
+          ? lastAlertLine
+          : lastDebugLine;
+    } else {
+      latestLine = lastAlertLine || lastDebugLine || "";
+    }
+
+    if (!latestLine) {
+      if (statusBarItem) {
+        statusBarItem.text = `Load: --`;
+        statusBarItem.backgroundColor = undefined;
+      }
+      return;
+    }
+
+    const loadMatch =
+      latestLine.match(/LOAD=(\d+(\.\d+)?)/) ||
+      latestLine.match(/Load average alto: (\d+(\.\d+)?)/);
+    const load = loadMatch ? parseFloat(loadMatch[1]) : 0;
+
+    if (statusBarItem) {
+      statusBarItem.text = `Load: ${load.toFixed(2)}`;
+      statusBarItem.backgroundColor =
+        load > userSettings.threshold
+          ? new vscode.ThemeColor("statusBarItem.errorBackground")
+          : undefined;
+    }
+
+    // Mostrar alerta se for um novo ALERTA
+    if (
+      latestLine.includes("[ALERTA]") &&
+      extractTimestamp(latestLine) !== lastAlertTimestamp &&
+      load > userSettings.threshold
+    ) {
+      lastAlertTimestamp = extractTimestamp(latestLine);
+      vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
+    }
+  };
+
+  const startChecking = () => {
     if (interval) clearInterval(interval);
-    interval = setInterval(checkLog, intervalSeconds * 1000);
-  }
-
+    interval = setInterval(checkLog, userSettings.intervalSeconds * 1000);
+    checkLog();
+  };
   startChecking();
 
-  // Ouve mudanças nas configurações
-  vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration("loadMonitor.intervalSeconds") || event.affectsConfiguration("loadMonitor.threshold")) {
-      updateConfig();
+  vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("loadMonitor")) {
+      const oldSettings = { ...userSettings };
+      carregarConfiguracoes();
+
+      const mudouLogFilePath =
+        userSettings.logFilePath !== oldSettings.logFilePath;
+      const mudouThreshold = userSettings.threshold !== oldSettings.threshold;
+      const mudouInterval =
+        userSettings.intervalSeconds !== oldSettings.intervalSeconds;
+
+      const mudouSidebar = userSettings.showSidebar !== oldSettings.showSidebar;
+      if (mudouSidebar) {
+        if (userSettings.showSidebar && !statusBarItem) {
+          statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            100
+          );
+          statusBarItem.tooltip = "Monitor de Load Average";
+          statusBarItem.show();
+        } else if (!userSettings.showSidebar && statusBarItem) {
+          statusBarItem.dispose();
+          statusBarItem = undefined;
+        }
+      }
+
+      const precisaReiniciarScript =
+        mudouThreshold || mudouInterval || mudouLogFilePath;
+      if (precisaReiniciarScript) {
+        pararScriptEReiniciar();
+      }
+
       startChecking();
     }
   });
 
   context.subscriptions.push({
-    dispose: () => {
-      if (interval) clearInterval(interval);
-    }
+    dispose: () => interval && clearInterval(interval),
   });
 
-  // Comandos para gerar script e forçar verificação manual
-  const disposableSetup = vscode.commands.registerCommand("load-monitor-alert.runSetup", () => {
-    gerarESugerirExecucaoDoScript(logFilePath, threshold, intervalSeconds);
+  context.subscriptions.push({
+    dispose: () => statusBarItem?.dispose(),
   });
-  context.subscriptions.push(disposableSetup);
 
-  const disposableForceCheck = vscode.commands.registerCommand("load-monitor-alert.forceCheck", () => {
-    vscode.window.showInformationMessage("Forçando verificação manual do log...");
-    checkLog();
-  });
-  context.subscriptions.push(disposableForceCheck);
+  context.subscriptions.push(
+    vscode.commands.registerCommand("load-monitor-alert.runSetup", () => {
+      gerarESugerirExecucaoDoScript(
+        userSettings.logFilePath,
+        userSettings.threshold,
+        userSettings.intervalSeconds
+      );
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("load-monitor-alert.forceCheck", () => {
+      vscode.window.showInformationMessage(
+        "Forçando verificação manual do log..."
+      );
+      checkLog();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("load-monitor-alert.cleanup", () => {
+      vscode.window
+        .showWarningMessage(
+          "Deseja parar o monitoramento e excluir os arquivos gerados?",
+          "Sim",
+          "Cancelar"
+        )
+        .then((resposta) => {
+          if (resposta === "Sim") {
+            const scriptDir = path.join(os.homedir(), "load-monitor");
+            const scriptPath = path.join(scriptDir, "monitor_load.sh");
+            const pidFile = path.join(scriptDir, "monitor_load.pid");
+
+            if (fs.existsSync(userSettings.logFilePath))
+              fs.unlinkSync(userSettings.logFilePath);
+            if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+            if (fs.existsSync(pidFile)) {
+              const pid = fs.readFileSync(pidFile, "utf8").trim();
+              try {
+                process.kill(Number(pid), "SIGTERM");
+              } catch (e) {
+                console.error("Erro ao encerrar processo:", e);
+              }
+              fs.unlinkSync(pidFile);
+            }
+
+            vscode.window.showInformationMessage(
+              "Arquivos removidos com sucesso."
+            );
+          }
+        });
+    })
+  );
 }
 
-function gerarESugerirExecucaoDoScript(logFilePath: string, threshold: number, intervalSeconds: number) {
+// Função que cria o script bash e pergunta se o usuário quer executá-lo
+function gerarESugerirExecucaoDoScript(
+  logFilePath: string,
+  threshold: number,
+  intervalSeconds: number,
+  executarAuto: boolean = false
+) {
   const scriptDir = path.join(os.homedir(), "load-monitor");
   const scriptPath = path.join(scriptDir, "monitor_load.sh");
+  const pidFile = path.join(scriptDir, "monitor_load.pid");
 
   if (!fs.existsSync(scriptDir)) {
     fs.mkdirSync(scriptDir, { recursive: true });
   }
 
   const scriptContent = `#!/bin/bash
-
 THRESHOLD=${threshold}
 INTERVAL=${intervalSeconds}
-LOGFILE="$HOME/load_alerts.log"
-MAX_SIZE=51200  # 50 KB
+LOGFILE="${logFilePath}"
+MAX_SIZE=51200
 
 export LC_NUMERIC=C
-mkdir -p "$(dirname "$LOGFILE")"
+mkdir -p "$(dirname \"$LOGFILE\")"
 echo "[INFO] Monitoramento de load iniciado: $(date)" >> "$LOGFILE"
 
 while true; do
@@ -156,37 +268,107 @@ done
 
   fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
 
-  vscode.window
-    .showInformationMessage(`Script gerado com sucesso em: ${scriptPath}. Deseja executá-lo agora?`, "Executar", "Não")
-    .then((escolha) => {
-      if (escolha === "Executar") {
-        scriptProcess = vscode.window.createTerminal("Load Monitor Script");
-        scriptProcess.sendText(`bash "${scriptPath}"`);
-        scriptProcess.show();
-      }
+  const runScript = () => {
+    const child = spawn("bash", [scriptPath], {
+      detached: true,
+      stdio: "ignore",
     });
+    fs.writeFileSync(pidFile, String(child.pid), "utf-8");
+    child.unref();
+    vscode.window.showInformationMessage("Script de monitoramento reiniciado.");
+  };
+
+  if (executarAuto) {
+    runScript();
+  } else {
+    vscode.window
+      .showInformationMessage(
+        `Script gerado com sucesso em: ${scriptPath}. Deseja executá-lo agora em background?`,
+        "Executar",
+        "Cancelar"
+      )
+      .then((escolha) => {
+        if (escolha === "Executar") {
+          runScript();
+        }
+      });
+  }
 }
 
+// Função executada automaticamente quando a extensão é desativada
 export function deactivate() {
   if (interval) clearInterval(interval);
-
+  const scriptDir = path.join(os.homedir(), "load-monitor");
   const logFilePath = path.join(os.homedir(), "load_alerts.log");
+  const scriptPath = path.join(scriptDir, "monitor_load.sh");
+  const pidFile = path.join(scriptDir, "monitor_load.pid");
 
-  if (fs.existsSync(logFilePath)) {
+  // Remove o log
+  // if (fs.existsSync(logFilePath)) {
+  //   try {
+  //     fs.unlinkSync(logFilePath);
+  //     console.log("[LOAD MONITOR] Arquivo de log removido.");
+  //   } catch (e) {
+  //     console.error("[LOAD MONITOR] Falha ao remover o log:", e);
+  //   }
+  // }
+
+  // // Encerra o processo em background
+  // if (fs.existsSync(pidFile)) {
+  //   const pid = fs.readFileSync(pidFile, "utf-8").trim();
+  //   try {
+  //     process.kill(Number(pid), "SIGTERM");
+  //     console.log(`[LOAD MONITOR] Processo encerrado (PID: ${pid}).`);
+  //     fs.unlinkSync(pidFile);
+  //   } catch (e) {
+  //     console.error(
+  //       `[LOAD MONITOR] Falha ao encerrar processo (PID: ${pid}):`,
+  //       e
+  //     );
+  //   }
+  // }
+
+  // // Remove o script bash
+  // if (fs.existsSync(scriptPath)) {
+  //   try {
+  //     fs.unlinkSync(scriptPath);
+  //     console.log("[LOAD MONITOR] Script de monitoramento removido.");
+  //   } catch (e) {
+  //     console.error("[LOAD MONITOR] Falha ao remover script:", e);
+  //   }
+  // }
+}
+
+function carregarConfiguracoes() {
+  const config = vscode.workspace.getConfiguration("loadMonitor");
+  userSettings.intervalSeconds = config.get<number>("intervalSeconds", 30);
+  userSettings.threshold = config.get<number>("threshold", 4.0);
+  userSettings.logFilePath = config.get<string>(
+    "logFilePath",
+    path.join(os.homedir(), "load_alerts.log")
+  );
+  userSettings.showSidebar = config.get<boolean>("showSidebar", true);
+}
+
+function pararScriptEReiniciar() {
+  const scriptDir = path.join(os.homedir(), "load-monitor");
+  const pidFile = path.join(scriptDir, "monitor_load.pid");
+
+  if (fs.existsSync(pidFile)) {
+    const pid = fs.readFileSync(pidFile, "utf8").trim();
     try {
-      fs.unlinkSync(logFilePath);
-      console.log("[LOAD MONITOR] Arquivo de log removido.");
+      process.kill(Number(pid), "SIGTERM");
+      fs.unlinkSync(pidFile);
+      console.log(`[LOAD MONITOR] Processo antigo encerrado (PID: ${pid}).`);
     } catch (e) {
-      console.error("[LOAD MONITOR] Falha ao remover o log:", e);
+      console.error(`[LOAD MONITOR] Erro ao encerrar processo antigo:`, e);
     }
   }
 
-  if (scriptProcess) {
-    try {
-      scriptProcess.dispose();
-      console.log("[LOAD MONITOR] Terminal do script encerrado.");
-    } catch (e) {
-      console.error("[LOAD MONITOR] Falha ao encerrar terminal:", e);
-    }
-  }
+  gerarESugerirExecucaoDoScript(
+    userSettings.logFilePath,
+    userSettings.threshold,
+    userSettings.intervalSeconds,
+    true // <- Executar sem perguntar
+  );
 }
