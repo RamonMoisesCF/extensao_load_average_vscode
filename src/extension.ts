@@ -7,6 +7,7 @@ import { spawn } from "child_process";
 let interval: NodeJS.Timeout | null = null;
 let lastAlertTimestamp = "";
 let statusBarItem: vscode.StatusBarItem;
+let isAlertOpen = false;
 
 let userSettings = {
   intervalSeconds: 30,
@@ -72,7 +73,9 @@ export function activate(context: vscode.ExtensionContext) {
     const load = loadMatch ? parseFloat(loadMatch[1]) : 0;
 
     if (userSettings.showSidebar) {
-      statusBarItem.text = `$(dashboard) Load: ${isNaN(load) ? "--" : load.toFixed(2)}`;
+      statusBarItem.text = `$(dashboard) Load: ${
+        isNaN(load) ? "--" : load.toFixed(2)
+      }`;
     }
 
     if (
@@ -86,7 +89,15 @@ export function activate(context: vscode.ExtensionContext) {
           "statusBarItem.errorBackground"
         );
       }
-      vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
+
+      if (!isAlertOpen) {
+        isAlertOpen = true;
+        vscode.window
+          .showErrorMessage(`ALERTA: Load average alto: ${load}`)
+          .then(() => {
+            isAlertOpen = false;
+          });
+      }
     } else {
       if (userSettings.showSidebar) {
         statusBarItem.backgroundColor = undefined;
