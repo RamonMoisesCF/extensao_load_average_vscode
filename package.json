@@ -2,7 +2,7 @@
   "name": "load-monitor-alert",
   "displayName": "Monitor de Load Average",
   "description": "VS Code alert for high load average",
-  "version": "0.0.33",
+  "version": "0.0.34",
   "publisher": "MonitordeLoadAverage",
   "author": {
     "name": "Ramon Moisés",
