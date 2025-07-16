@@ -7,7 +7,6 @@ import { spawn } from "child_process";
 let interval: NodeJS.Timeout | null = null;
 let lastAlertTimestamp = "";
 let statusBarItem: vscode.StatusBarItem;
-let isAlertOpen = false;
 
 let userSettings = {
   intervalSeconds: 30,
@@ -89,15 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
           "statusBarItem.errorBackground"
         );
       }
-
-      if (!isAlertOpen) {
-        isAlertOpen = true;
-        vscode.window
-          .showErrorMessage(`ALERTA: Load average alto: ${load}`)
-          .then(() => {
-            isAlertOpen = false;
-          });
-      }
+      vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
     } else {
       if (userSettings.showSidebar) {
         statusBarItem.backgroundColor = undefined;
