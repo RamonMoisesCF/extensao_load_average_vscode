@@ -7,6 +7,7 @@ import { spawn } from "child_process";
 let interval: NodeJS.Timeout | null = null;
 let lastAlertTimestamp = "";
 let statusBarItem: vscode.StatusBarItem;
+let alertaEmExibicao = false;
 
 let userSettings = {
   intervalSeconds: 30,
@@ -28,6 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.text = `$(dashboard) Load: --`;
   statusBarItem.tooltip = "Monitor de Load Average";
   if (userSettings.showSidebar) statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 
   if (!fs.existsSync(userSettings.logFilePath)) {
     vscode.window
@@ -59,7 +61,7 @@ export function activate(context: vscode.ExtensionContext) {
     const content = fs.readFileSync(userSettings.logFilePath, "utf8");
     const lines = content.trim().split("\n").reverse();
     const lastAlertLine = lines.find((line) => line.includes("[ALERTA]"));
-    const lastLine = lastAlertLine || lines[0];
+    const lastLine = lines[0];
 
     const timestampMatch = lastAlertLine?.match(
       /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/
@@ -75,21 +77,24 @@ export function activate(context: vscode.ExtensionContext) {
       statusBarItem.text = `$(dashboard) Load: ${
         isNaN(load) ? "--" : load.toFixed(2)
       }`;
+      statusBarItem.tooltip = alertaEmExibicao
+        ? "ALERTA: Load average acima do limite"
+        : "Monitor de Load Average";
     }
 
-    if (
-      lastAlertLine &&
-      alertTimestamp !== lastAlertTimestamp &&
-      load > userSettings.threshold
-    ) {
-      lastAlertTimestamp = alertTimestamp;
-      if (userSettings.showSidebar) {
-        statusBarItem.backgroundColor = new vscode.ThemeColor(
-          "statusBarItem.errorBackground"
-        );
+    if (load > userSettings.threshold) {
+      if (!alertaEmExibicao) {
+        alertaEmExibicao = true;
+        lastAlertTimestamp = alertTimestamp;
+        if (userSettings.showSidebar) {
+          statusBarItem.backgroundColor = new vscode.ThemeColor(
+            "statusBarItem.errorBackground"
+          );
+        }
+        vscode.window.showErrorMessage("ALERTA: Load average alto");
       }
-      vscode.window.showErrorMessage(`ALERTA: Load average alto: ${load}`);
     } else {
+      alertaEmExibicao = false;
       if (userSettings.showSidebar) {
         statusBarItem.backgroundColor = undefined;
       }
@@ -116,15 +121,11 @@ export function activate(context: vscode.ExtensionContext) {
       const mudouSidebar = userSettings.showSidebar !== oldSettings.showSidebar;
 
       if (mudouSidebar) {
-        if (userSettings.showSidebar && !statusBarItem) {
-          statusBarItem = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            100
-          );
-          statusBarItem.tooltip = "Monitor de Load Average";
+        if (userSettings.showSidebar) {
           statusBarItem.show();
-        } else if (!userSettings.showSidebar && statusBarItem) {
+        } else {
           statusBarItem.hide();
+          statusBarItem.backgroundColor = undefined;
         }
       }
 
@@ -139,7 +140,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({
     dispose: () => interval && clearInterval(interval),
   });
-  context.subscriptions.push({ dispose: () => statusBarItem?.dispose() });
 
   context.subscriptions.push(
     vscode.commands.registerCommand("load-monitor-alert.runSetup", () => {
@@ -305,35 +305,3 @@ function pararScriptEReiniciar() {
     true
   );
 }
-
-// Remove o log
-// if (fs.existsSync(logFilePath)) {
-//   try {
-//     fs.unlinkSync(logFilePath);
-//   } catch (e) {
-//     console.error("[LOAD MONITOR] Falha ao remover o log:", e);
-//   }
-// }
-
-// // Encerra o processo em background
-// if (fs.existsSync(pidFile)) {
-//   const pid = fs.readFileSync(pidFile, "utf-8").trim();
-//   try {
-//     process.kill(Number(pid), "SIGTERM");
-//     fs.unlinkSync(pidFile);
-//   } catch (e) {
-//     console.error(
-//       `[LOAD MONITOR] Falha ao encerrar processo (PID: ${pid}):`,
-//       e
-//     );
-//   }
-// }
-
-// // Remove o script bash
-// if (fs.existsSync(scriptPath)) {
-//   try {
-//     fs.unlinkSync(scriptPath);
-//   } catch (e) {
-//     console.error("[LOAD MONITOR] Falha ao remover script:", e);
-//   }
-// }
